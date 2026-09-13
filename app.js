@@ -188,6 +188,19 @@ function skip(seconds) {
 back.addEventListener('click', () => skip(-15));
 forward.addEventListener('click', () => skip(15));
 
+// Space toggles playback from anywhere on the page (not just when a control has
+// focus). Ignore it while typing in a field and let focused buttons handle their
+// own activation so a focused play/back/forward still works normally.
+window.addEventListener('keydown', event => {
+  if (event.key !== ' ' && event.code !== 'Space') return;
+  const target = event.target;
+  const tag = target && target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (target && target.isContentEditable)) return;
+  if (target && target.tagName === 'BUTTON') return;
+  event.preventDefault();
+  togglePlayback();
+});
+
 // Drag the waveform left/right to scrub. The playhead stays centered, so
 // dragging right reveals earlier audio (time decreases) and left advances it.
 let dragging = false;
@@ -366,7 +379,6 @@ draw();
 loadRecording();
 notifyFontFallback();
 setupHelperBar();
-window.generateWaveform = generateWaveform;
 window.addEventListener('pagehide', event => {
   if (!event.persisted && audioURL) URL.revokeObjectURL(audioURL);
 });
