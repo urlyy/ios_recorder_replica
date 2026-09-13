@@ -319,13 +319,18 @@ function setupHelperBar() {
   const repo = document.querySelector('#repo-link');
   const upload = document.querySelector('#upload');
   const file = document.querySelector('#file');
+  const dismiss = document.querySelector('#dismiss');
   repo.href = GITHUB_URL;
   let hideTimer = 0;
+  // Hidden for the rest of this session; a refresh brings the bar back since
+  // nothing is persisted.
+  let dismissed = false;
   const scheduleHide = () => {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => bar.classList.remove('is-visible'), 500);
   };
   const reveal = () => {
+    if (dismissed) return;
     bar.classList.add('is-visible');
     scheduleHide();
   };
@@ -334,6 +339,11 @@ function setupHelperBar() {
   window.addEventListener('pointermove', reveal, { passive: true });
   bar.addEventListener('pointerenter', () => clearTimeout(hideTimer));
   bar.addEventListener('pointerleave', scheduleHide);
+  dismiss.addEventListener('click', () => {
+    dismissed = true;
+    clearTimeout(hideTimer);
+    bar.classList.remove('is-visible');
+  });
   upload.addEventListener('click', () => file.click());
   file.addEventListener('change', async () => {
     const picked = file.files && file.files[0];

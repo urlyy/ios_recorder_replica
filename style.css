@@ -227,6 +227,7 @@ canvas.is-scrubbing { cursor: grabbing; }
   cursor: pointer;
 }
 .helper-button:active { opacity: .7; }
+.helper-dismiss { padding: 0 12px; background: rgba(255, 255, 255, .08); }
 @media (prefers-reduced-motion: reduce) {
   .helper-bar { transition: opacity .35s ease; transform: translate(-50%, 0); }
 }

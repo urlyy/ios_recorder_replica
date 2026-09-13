@@ -276,6 +276,17 @@ async function main() {
     await page.mouse.move(5, 5);
     await page.mouse.move(6, 6);
     assert.ok(await page.locator('.helper-bar').evaluate(node => node.classList.contains('is-visible')));
+    // Dismiss hides the bar for this session: even pointer movement no longer reveals it.
+    await page.locator('#dismiss').click();
+    assert.ok(await page.locator('.helper-bar').evaluate(node => !node.classList.contains('is-visible')), 'Dismiss must hide the helper bar');
+    await page.mouse.move(20, 20);
+    await page.mouse.move(21, 21);
+    assert.ok(await page.locator('.helper-bar').evaluate(node => !node.classList.contains('is-visible')), 'Movement must not reveal a dismissed helper bar');
+    // A reload brings the bar back since dismissal is not persisted.
+    await page.reload();
+    await page.waitForFunction(() => document.querySelector('.helper-bar').classList.contains('is-visible'), null, { timeout: 6000 });
+    await page.waitForLoadState('networkidle');
+    await page.waitForFunction(() => !document.querySelector('#play').disabled);
     await page.waitForFunction(() => !document.querySelector('.helper-bar').classList.contains('is-visible'), null, { timeout: 6000 });
 
     // Local upload plays a browser-only file: no network request, new waveform, resettable playback.
