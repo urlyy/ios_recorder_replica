@@ -1,18 +1,29 @@
 // Local audio only. Change src to another file in this directory when needed.
+// `time` (status-bar clock), `date` and `duration` are display text only:
+// leave `duration` empty to derive it from the decoded audio metadata instead.
 const RECORDING = {
   src: 'record/主要是想邀请您.m4a',
+  time: '12:34',
   title: '电话录音',
-  date: '2026年5月11日',
+  date: '2026年1月14日',
+  duration: '5:14',
   transcript: '',
 };
+
+// Replace with your own repository link. Used only by the floating helper bar,
+// which sits outside the iOS replica and auto-hides so it stays out of recordings.
+const GITHUB_URL = 'https://github.com/urlyy/ios_recorder_replica';
 
 const audio = document.querySelector('#audio');
 const canvas = document.querySelector('#waveform');
 const ctx = canvas.getContext('2d');
 const play = document.querySelector('#play');
+const back = document.querySelector('#back');
+const forward = document.querySelector('#forward');
 const error = document.querySelector('#error');
 const elapsed = document.querySelector('#elapsed');
 const total = document.querySelector('#duration');
+const statusTime = document.querySelector('#status-time');
 const pixelsPerSecond = 100;
 const peaksPerSecond = 25;
 const waveformColor = '#080808';
@@ -31,6 +42,24 @@ function format(value, precise = false) {
   const prefix = showHours ? `${Math.floor(seconds / 3600)}:` : '';
   const time = `${prefix}${precise || showHours ? minutes.padStart(2, '0') : minutes}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
   return precise ? `${time}.${String(Math.floor(seconds % 1 * 100)).padStart(2, '0')}` : time;
+}
+
+// Status-bar clock: start from RECORDING.time and advance in lockstep with the
+// playback position, so the 24-hour clock ticks forward as the recording plays.
+const clockBase = (() => {
+  const match = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(RECORDING.time || '');
+  return match ? (Number(match[1]) % 24) * 3600 + Number(match[2]) * 60 : null;
+})();
+
+function updateStatusClock() {
+  if (clockBase === null) {
+    statusTime.textContent = RECORDING.time;
+    return;
+  }
+  const nowSecs = Math.floor(clockBase + (audio.currentTime || 0)) % 86400;
+  const hh = Math.floor(nowSecs / 3600);
+  const mm = Math.floor((nowSecs % 3600) / 60);
+  statusTime.textContent = `${hh}:${String(mm).padStart(2, '0')}`;
 }
 
 // One amplitude envelope for all decoded channels; no generated or random bars.
@@ -93,18 +122,26 @@ function draw() {
   }
   ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
   ctx.textAlign = 'center';
+  // Clip labels to the canvas so a time entering from either edge is revealed
+  // sliver by sliver as it scrolls in, instead of popping in at full width.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, waveHeight, width, height - waveHeight);
+  ctx.clip();
   for (let quarter = Math.floor(leftTime * 4); quarter <= Math.ceil(rightTime * 4); quarter++) {
     const second = quarter / 4;
     const x = width / 2 + (second - current) * pixelsPerSecond;
     const major = quarter % 4 === 0;
     ctx.fillStyle = '#e9e9eb';
     ctx.fillRect(x, waveHeight, 1, major ? 10 : 5);
-    if (major && second >= 0 && x >= 16 && x <= width - 16) {
+    if (major && second >= 0) {
       ctx.fillStyle = '#c4c4c8';
       ctx.fillText(format(second), x, height - 6);
     }
   }
+  ctx.restore();
   elapsed.textContent = format(current, true);
+  updateStatusClock();
 }
 
 function tick() {
@@ -116,6 +153,7 @@ function renderPlay() {
   const running = !audio.paused;
   document.querySelector('.screen').classList.toggle('is-playing', running);
   play.disabled = loading || !duration || !!audio.error;
+  back.disabled = forward.disabled = play.disabled;
   const label = running ? '暂停' : '播放';
   const icon = lucide.createElement(running ? lucide.Pause : lucide.Play);
   icon.classList.add(running ? 'pause-icon' : 'play-icon');
@@ -142,12 +180,63 @@ async function togglePlayback() {
 
 play.addEventListener('click', togglePlayback);
 
+// Skip 15 seconds back/forward, clamped to the recording bounds like iOS.
+function skip(seconds) {
+  if (loading || !duration || audio.error) return;
+  seekTo((audio.currentTime || 0) + seconds);
+}
+back.addEventListener('click', () => skip(-15));
+forward.addEventListener('click', () => skip(15));
+
+// Drag the waveform left/right to scrub. The playhead stays centered, so
+// dragging right reveals earlier audio (time decreases) and left advances it.
+let dragging = false;
+let dragStartX = 0;
+let dragStartTime = 0;
+let resumeAfterDrag = false;
+
+function seekTo(time) {
+  const clamped = Math.max(0, Math.min(duration, time));
+  audio.currentTime = clamped;
+  draw();
+}
+
+canvas.addEventListener('pointerdown', event => {
+  if (loading || !duration || audio.error) return;
+  dragging = true;
+  dragStartX = event.clientX;
+  dragStartTime = audio.currentTime || 0;
+  resumeAfterDrag = !audio.paused;
+  if (resumeAfterDrag) audio.pause();
+  canvas.setPointerCapture(event.pointerId);
+  canvas.classList.add('is-scrubbing');
+});
+
+canvas.addEventListener('pointermove', event => {
+  if (!dragging) return;
+  const deltaSeconds = (event.clientX - dragStartX) / pixelsPerSecond;
+  seekTo(dragStartTime - deltaSeconds);
+});
+
+function endDrag(event) {
+  if (!dragging) return;
+  dragging = false;
+  canvas.classList.remove('is-scrubbing');
+  if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+  if (resumeAfterDrag && duration && !audio.error) audio.play().catch(() => renderPlay());
+}
+
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+
 for (const event of ['play', 'pause', 'ended']) audio.addEventListener(event, renderPlay);
 audio.addEventListener('timeupdate', draw);
 audio.addEventListener('seeked', draw);
 audio.addEventListener('loadedmetadata', () => {
   duration = Number.isFinite(audio.duration) ? audio.duration : 0;
-  total.textContent = format(duration);
+  // The displayed total time is either the configured text or derived from metadata.
+  if (!RECORDING.duration) total.textContent = format(duration);
   renderPlay();
 });
 audio.addEventListener('error', () => {
@@ -157,26 +246,31 @@ audio.addEventListener('error', () => {
   renderPlay();
 });
 
-async function loadRecording() {
+async function loadRecording(blob) {
   if (loading) return false;
   loading = true;
+  error.textContent = '';
   renderPlay();
-  let audioBlob;
+  let audioBlob = blob;
   try {
-    const response = await fetch(RECORDING.src, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`Audio HTTP ${response.status}`);
-    audioBlob = await response.blob();
+    if (!audioBlob) {
+      const response = await fetch(RECORDING.src, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Audio HTTP ${response.status}`);
+      audioBlob = await response.blob();
+    }
     // A local object URL supports seeking even on static servers without Range.
     const previousURL = audioURL;
     audioURL = URL.createObjectURL(audioBlob);
     peaks = new Float32Array(0);
     peakScale = 1;
     duration = 0;
+    audio.pause();
+    audio.currentTime = 0;
     audio.src = audioURL;
     audio.load();
     if (previousURL) URL.revokeObjectURL(previousURL);
   } catch {
-    error.textContent = '未找到本地音频文件';
+    error.textContent = blob ? '无法读取所选音频' : '未找到本地音频文件';
     loading = false;
     renderPlay();
     return false;
@@ -218,14 +312,50 @@ function notifyFontFallback() {
   });
 }
 
+// Floating helper bar: repo link + local upload. It lives outside the iOS
+// replica and auto-hides after a few seconds so screen recordings stay clean.
+function setupHelperBar() {
+  const bar = document.querySelector('[data-helper]');
+  const repo = document.querySelector('#repo-link');
+  const upload = document.querySelector('#upload');
+  const file = document.querySelector('#file');
+  repo.href = GITHUB_URL;
+  let hideTimer = 0;
+  const scheduleHide = () => {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => bar.classList.remove('is-visible'), 500);
+  };
+  const reveal = () => {
+    bar.classList.add('is-visible');
+    scheduleHide();
+  };
+  reveal();
+  // Only movement reveals the bar; clicks/taps/keys must not summon it.
+  window.addEventListener('pointermove', reveal, { passive: true });
+  bar.addEventListener('pointerenter', () => clearTimeout(hideTimer));
+  bar.addEventListener('pointerleave', scheduleHide);
+  upload.addEventListener('click', () => file.click());
+  file.addEventListener('change', async () => {
+    const picked = file.files && file.files[0];
+    if (!picked) return;
+    // The file never leaves the browser; it is read via an in-memory object URL.
+    // Only the audio is swapped — the title, date and other text stay unchanged.
+    await loadRecording(picked);
+    file.value = '';
+    reveal();
+  });
+}
+
 new ResizeObserver(draw).observe(canvas);
+updateStatusClock();
 document.querySelector('#title').textContent = RECORDING.title;
 document.querySelector('#date').textContent = RECORDING.date;
-total.textContent = format(0);
+total.textContent = RECORDING.duration || format(0);
 lucide.createIcons();
 draw();
 loadRecording();
 notifyFontFallback();
+setupHelperBar();
 window.generateWaveform = generateWaveform;
 window.addEventListener('pagehide', event => {
   if (!event.persisted && audioURL) URL.revokeObjectURL(audioURL);

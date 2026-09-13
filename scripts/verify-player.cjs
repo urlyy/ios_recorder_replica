@@ -3,9 +3,9 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 const baseURL = process.env.BASE_URL || 'http://127.0.0.1:8080';
 
-function createAudioFixture() {
+function createAudioFixture(freq = 0.08) {
   const sampleRate = 16000;
-  const length = sampleRate * 8;
+  const length = sampleRate * 90;
   const wav = Buffer.alloc(44 + length * 2);
   wav.write('RIFF');
   wav.writeUInt32LE(wav.length - 8, 4);
@@ -21,7 +21,7 @@ function createAudioFixture() {
   wav.writeUInt32LE(length * 2, 40);
   for (let i = 0; i < length; i++) {
     const envelope = 0.1 + 0.6 * Math.abs(Math.sin(i / sampleRate * 4));
-    wav.writeInt16LE(Math.round(Math.sin(i * 0.08) * envelope * 25000), 44 + i * 2);
+    wav.writeInt16LE(Math.round(Math.sin(i * freq) * envelope * 25000), 44 + i * 2);
   }
   return wav;
 }
@@ -41,12 +41,28 @@ async function main() {
     await page.waitForLoadState('networkidle');
     await page.waitForFunction(() => !document.querySelector('#play').disabled);
 
-    assert.deepEqual(await page.locator('button:enabled').evaluateAll(nodes => nodes.map(node => node.id)), ['play']);
-    assert.equal(await page.locator('.status-left > span').innerText(), '16:17');
+    assert.deepEqual(await page.locator('.screen button:enabled').evaluateAll(nodes => nodes.map(node => node.id)), ['back', 'play', 'forward']);
+    // Status-bar clock starts at RECORDING.time and advances with playback position.
+    const clockAt = seconds => page.evaluate(async s => {
+      const audio = document.querySelector('#audio');
+      audio.currentTime = s;
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return document.querySelector('#status-time').innerText;
+    }, seconds);
+    assert.equal(await clockAt(0), await page.evaluate(() => RECORDING.time));
+    assert.equal(await clockAt(60), '12:35');
+    assert.equal(await clockAt(0), await page.evaluate(() => RECORDING.time));
+    assert.equal(await page.locator('#title').innerText(), await page.evaluate(() => RECORDING.title));
+    if (await page.evaluate(() => !!RECORDING.duration)) {
+      assert.equal(await page.locator('#duration').innerText(), await page.evaluate(() => RECORDING.duration));
+    }
     assert.equal(await page.locator('.battery-number').innerText(), '78');
     assert.equal(await page.locator('.battery-number').evaluate(node => getComputedStyle(node).color), 'rgb(199, 199, 199)');
-    assert.equal(await page.locator('dialog, [popover], input').count(), 0);
-    assert.equal(await page.locator('canvas[tabindex]').count(), 0);
+    assert.equal(await page.locator('dialog, [popover]').count(), 0);
+    assert.equal(await page.locator('input:not([type=file])').count(), 0);
+    assert.equal(await page.locator('#file').evaluate(node => node.hidden), true);
+    // The helper bar lives outside the iOS replica so it never overlaps the screen chrome.
+    assert.equal(await page.locator('.helper-bar').evaluate(node => node.closest('.screen') === null), true);
 
     const initialPeaks = await page.evaluate(() => Array.from(peaks));
     assert.ok(initialPeaks.length > 0 && initialPeaks.some(value => value > 0));
@@ -89,7 +105,7 @@ async function main() {
     await assertBreathing();
     const animationStart = await page.locator('.screen-recording-dot').evaluate(node => node.getAnimations()[0].startTime);
 
-    const inertIds = ['more', 'done', 'back', 'forward', 'transcript', 'replace', 'settings'];
+    const inertIds = ['more', 'done', 'transcript', 'replace', 'settings'];
     const clickInertControls = async () => {
       for (const id of inertIds) {
         assert.ok(await page.locator(`#${id}`).isDisabled());
@@ -100,6 +116,19 @@ async function main() {
     await clickInertControls();
     assert.ok(await page.locator('audio').evaluate(node => node.paused && node.currentTime === 0));
     assert.equal(audioRequests, 1);
+
+    // Skip buttons: forward advances 15s (clamped to duration), back rewinds 15s (clamped to 0).
+    await page.locator('audio').evaluate(node => { node.currentTime = 2; });
+    await page.getByRole('button', { name: '快进15秒', exact: true }).click();
+    assert.ok(await page.locator('audio').evaluate(node => Math.abs(node.currentTime - 17) < 0.05), 'forward should add 15s');
+    await page.getByRole('button', { name: '后退15秒', exact: true }).click();
+    assert.ok(await page.locator('audio').evaluate(node => Math.abs(node.currentTime - 2) < 0.05), 'back should subtract 15s');
+    await page.getByRole('button', { name: '后退15秒', exact: true }).click();
+    assert.equal(await page.locator('audio').evaluate(node => node.currentTime), 0, 'back clamps at 0');
+    await page.getByRole('button', { name: '快进15秒', exact: true }).click();
+    assert.ok(await page.locator('audio').evaluate(node => node.currentTime <= node.duration), 'forward clamps at duration');
+    assert.ok(await page.locator('audio').evaluate(node => node.paused), 'skipping does not start playback');
+    await page.locator('audio').evaluate(node => { node.currentTime = 0; });
 
     await page.getByRole('button', { name: '播放', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('audio').currentTime > 0.3);
@@ -132,12 +161,34 @@ async function main() {
     assert.equal(await canvasImage(), stoppedImage);
     assert.equal(await page.locator('.screen-recording-dot').evaluate(node => node.getAnimations()[0].startTime), animationStart);
 
+    // Scrubbing: drag the centered waveform to change playback position.
+    await page.locator('audio').evaluate(node => { node.currentTime = 3; });
+    await page.waitForFunction(() => Math.abs(document.querySelector('audio').currentTime - 3) < 0.05);
     const box = await page.locator('canvas').boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    // Drag right by 150px at 100px/s -> time decreases ~1.5s.
+    await page.mouse.move(cx, cy);
     await page.mouse.down();
-    await page.mouse.move(box.x + 20, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.move(cx + 150, cy, { steps: 8 });
     await page.mouse.up();
-    assert.equal(await page.locator('audio').evaluate(node => node.currentTime), stoppedTime);
+    const afterBack = await page.locator('audio').evaluate(node => node.currentTime);
+    assert.ok(Math.abs(afterBack - 1.5) < 0.2, `drag right should rewind, got ${afterBack}`);
+    assert.equal(await page.locator('#elapsed').innerText(), await page.evaluate(t => format(t, true), afterBack));
+    // Drag left advances the position again.
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx - 200, cy, { steps: 8 });
+    await page.mouse.up();
+    const afterForward = await page.locator('audio').evaluate(node => node.currentTime);
+    assert.ok(afterForward - afterBack > 1.5, `drag left should advance, got ${afterForward}`);
+    // Dragging far right clamps at zero, never negative.
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + box.width * 3, cy, { steps: 10 });
+    await page.mouse.up();
+    assert.equal(await page.locator('audio').evaluate(node => node.currentTime), 0);
+    assert.ok(await page.locator('audio').evaluate(node => node.paused), 'scrubbing while paused stays paused');
 
     await page.getByRole('button', { name: '播放', exact: true }).click();
     await page.waitForFunction(time => document.querySelector('audio').currentTime > time + 0.1, stoppedTime);
@@ -199,13 +250,59 @@ async function main() {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await assertIsland();
 
+    // Helper bar: repo link opens configured URL, and it auto-hides without interaction.
+    assert.equal(await page.locator('#repo-link').getAttribute('target'), '_blank');
+    assert.equal(await page.locator('#repo-link').getAttribute('rel'), 'noopener noreferrer');
+    assert.ok((await page.locator('#repo-link').getAttribute('href')).startsWith('http'));
+    // The GitHub glyph must fit inside its viewBox so overflow:hidden does not clip it.
+    assert.ok(await page.locator('#repo-link svg').evaluate(svg => {
+      const box = svg.viewBox.baseVal;
+      const bbox = svg.querySelector('path').getBBox();
+      return bbox.x >= box.x - 0.5 && bbox.y >= box.y - 0.5
+        && bbox.x + bbox.width <= box.x + box.width + 0.5
+        && bbox.y + bbox.height <= box.y + box.height + 0.5;
+    }), 'GitHub icon path must fit within its viewBox');
+    assert.ok(await page.locator('.helper-bar').evaluate(node => node.closest('.screen') === null));
+    // Wait out the initial auto-reveal so the bar is hidden before probing interactions.
+    await page.waitForFunction(() => !document.querySelector('.helper-bar').classList.contains('is-visible'), null, { timeout: 6000 });
+    // Clicks/taps/keys (without pointer movement) must not summon the bar; only movement does.
+    await page.evaluate(() => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+      window.dispatchEvent(new TouchEvent('touchstart', { bubbles: true }));
+    });
+    assert.ok(await page.locator('.helper-bar').evaluate(node => !node.classList.contains('is-visible')), 'Clicks and keys must not reveal the helper bar');
+    await page.mouse.move(5, 5);
+    await page.mouse.move(6, 6);
+    assert.ok(await page.locator('.helper-bar').evaluate(node => node.classList.contains('is-visible')));
+    await page.waitForFunction(() => !document.querySelector('.helper-bar').classList.contains('is-visible'), null, { timeout: 6000 });
+
+    // Local upload plays a browser-only file: no network request, new waveform, resettable playback.
+    // It swaps only the audio; the title and date text stay unchanged.
+    const uploadRequests = audioRequests;
+    const titleBefore = await page.locator('#title').innerText();
+    const dateBefore = await page.locator('#date').innerText();
+    const peaksBefore = await page.evaluate(() => Array.from(peaks));
+    await page.locator('#file').setInputFiles({ name: '我的录音.m4a', mimeType: 'audio/mp4', buffer: createAudioFixture(0.02) });
+    await page.waitForFunction(before => JSON.stringify(Array.from(peaks)) !== before, JSON.stringify(peaksBefore));
+    await page.waitForFunction(() => !document.querySelector('#play').disabled);
+    assert.equal(audioRequests, uploadRequests, 'Upload must not hit the network');
+    assert.equal(await page.locator('#title').innerText(), titleBefore, 'Upload must not change the title');
+    assert.equal(await page.locator('#date').innerText(), dateBefore, 'Upload must not change the date');
+    assert.ok(await page.evaluate(() => peaks.length > 0));
+    await page.getByRole('button', { name: '播放', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('audio').currentTime > 0.2);
+    await page.getByRole('button', { name: '暂停', exact: true }).click();
+    await assertIsland();
+
     await page.route(/\.(wav|m4a|mp3|ogg|flac|aac)(\?.*)?$/i, route => route.fulfill({ status: 404, body: '' }));
     await page.reload();
     await page.waitForFunction(() => document.querySelector('#error').textContent.includes('未找到'));
     assert.ok(await page.locator('#play').isDisabled());
     await assertIsland();
     assert.deepEqual(errors, []);
-    console.log('PASS: play/pause/resume/replay, immutable black waveform, inert controls, fixed status values, gray battery text, color-only breathing dot with fixed size and position, animation independent of playback, reduced motion, distinct backgrounds, five viewports and missing audio.');
+    console.log('PASS: playback, immutable black waveform, inert controls, fixed status values, breathing dot, reduced motion, distinct backgrounds, five viewports, auto-hiding helper bar, network-free local upload playback and missing audio.');
   } finally {
     await browser.close();
   }
