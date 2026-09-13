@@ -327,7 +327,7 @@ function setupHelperBar() {
   let dismissed = false;
   const scheduleHide = () => {
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => bar.classList.remove('is-visible'), 500);
+    hideTimer = setTimeout(() => bar.classList.remove('is-visible'), 2000);
   };
   const reveal = () => {
     if (dismissed) return;

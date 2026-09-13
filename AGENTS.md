@@ -58,7 +58,7 @@ node scripts/verify-player.cjs
 - **播放控制**：`togglePlayback`（播放/暂停）、`skip(±15)`（后退/快进，经 `seekTo` 在 0～`duration` 收敛）。
 - **拖动跳转**：canvas 的 pointer 事件，拖动时暂停、松开后按 `resumeAfterDrag` 恢复。
 - **可用状态** `renderPlay`：`play`/`back`/`forward` 三个按钮的 `disabled` 由 `loading || !duration || audio.error` 统一决定。
-- **辅助栏** `setupHelperBar`：位于 `.screen` 之外，**只有 `pointermove` 会唤出**，约 0.5 秒后自动隐藏；
+- **辅助栏** `setupHelperBar`：位于 `.screen` 之外，**只有 `pointermove` 会唤出**，约 2 秒后自动隐藏；
   上传只调用 `loadRecording(blob)` 换音频与波形，**不修改标题、日期等文本**，且用内存 object URL，不发网络请求。
   「隐藏」按钮把 `dismissed` 置真，本次会话不再唤出（含 `pointermove`），刷新即恢复（不持久化）。
 - **字体探测** `notifyFontFallback`：仅在缺少苹方(`PingFang SC`)的设备弹出一次自动消失的提示。
