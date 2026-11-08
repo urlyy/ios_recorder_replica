@@ -16,7 +16,7 @@ index.html              页面结构（状态栏、灵动岛、录音面板、�
 style.css               全部样式，含灵动岛动画、响应式断点、辅助栏与字体提示
 app.js                  全部逻辑：音频加载、波形生成/绘制、播放控制、跳转、辅助栏、字体探测
 icons.js                Lucide 图标本地副本（体积大，勿手改）
-record/                 默认音频，当前为 record/主要是想邀请您.m4a
+record/                 默认音频，当前为 record/record.wav
 assets/1.png, 2.png     iOS 原生截图（播放/暂停状态），样式核对基准
 README.md               面向用户的说明
 AGENTS.md               本文件
@@ -38,7 +38,7 @@ python3 -m http.server 8080 --directory .
 ## app.js 架构要点
 
 - **配置**：顶部 `RECORDING`（`src`/`time`/`title`/`date`/`duration`）与 `GITHUB_URL` 两个常量是仅有的配置入口。
-  `title`/`date` 为纯展示文本；`duration` 为展示的总时长文本，留空则从音频元数据自动计算；
+  `title`/`date` 为纯展示文本；`duration` 为展示的总时长文本，默认留空，从音频元数据自动计算；
   `time` 是状态栏时钟起点（24 小时制），由 `updateStatusClock` 按 `audio.currentTime` 递增。
 - **波形生成** `generateWaveform`：用 Web Audio `decodeAudioData` 解码，按 `peaksPerSecond`(25) 取振幅包络峰值，
   只在加载音频时生成一次。绘制颜色固定 `waveformColor` (#080808)，**播放/暂停不得改变波形形状或颜色**。

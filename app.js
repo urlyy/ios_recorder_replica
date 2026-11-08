@@ -2,11 +2,11 @@
 // `time` (status-bar clock), `date` and `duration` are display text only:
 // leave `duration` empty to derive it from the decoded audio metadata instead.
 const RECORDING = {
-  src: 'record/主要是想邀请您.m4a',
+  src: 'record/record.wav',
   time: '12:34',
   title: '电话录音',
   date: '2026年1月14日',
-  duration: '5:14',
+  duration: '',
   transcript: '',
 };
 
