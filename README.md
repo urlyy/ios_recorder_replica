@@ -23,7 +23,7 @@ python3 -m http.server 8080 --directory .
 页面顶部数据全部集中在 [app.js](app.js) 的两个常量里：
 
 - `RECORDING` 对象：
-  - `src`：音频路径，默认 `record/record.wav`，换文件后刷新页面即可。
+  - `src`：音频路径，默认 `record/record.m4a`，换文件后刷新页面即可。
   - `time`：状态栏左上角时间文本（24 小时制），默认 `12:34`，作为**起始时间**；播放时会随播放进度同步向前走。
   - `title`：录音标题。
   - `date`：录音日期文本。

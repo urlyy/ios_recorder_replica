@@ -16,7 +16,7 @@ index.html              页面结构（状态栏、灵动岛、录音面板、�
 style.css               全部样式，含灵动岛动画、响应式断点、辅助栏与字体提示
 app.js                  全部逻辑：音频加载、波形生成/绘制、播放控制、跳转、辅助栏、字体探测
 icons.js                Lucide 图标本地副本（体积大，勿手改）
-record/                 默认音频，当前为 record/record.wav
+record/                 默认音频，当前为 record/record.m4a
 assets/1.png, 2.png     iOS 原生截图（播放/暂停状态），样式核对基准
 README.md               面向用户的说明
 AGENTS.md               本文件
