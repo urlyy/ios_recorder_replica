@@ -361,6 +361,14 @@ function setupHelperBar() {
   file.addEventListener('change', async () => {
     const picked = file.files && file.files[0];
     if (!picked) return;
+    // Explicit extensions avoid iOS audio/* picker bugs. Check again because
+    // accept is only a picker hint; MIME types may be empty or generic on iOS.
+    const extension = /\.[^.]+$/.exec(picked.name)?.[0].toLowerCase();
+    if (!file.accept.split(',').includes(extension)) {
+      file.value = '';
+      window.alert('请选择音频文件（如 WAV、MP3、M4A）');
+      return;
+    }
     // The file never leaves the browser; it is read via an in-memory object URL.
     // Only the audio is swapped — the title, date and other text stay unchanged.
     await loadRecording(picked);

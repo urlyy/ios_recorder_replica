@@ -48,6 +48,7 @@ python3 -m http.server 8080 --directory .
 - **可用状态** `renderPlay`：`play`/`back`/`forward` 三个按钮的 `disabled` 由 `loading || !duration || audio.error` 统一决定。
 - **辅助栏** `setupHelperBar`：位于 `.screen` 之外，**只有 `pointermove` 会唤出**，约 1.5 秒后自动隐藏；
   上传只调用 `loadRecording(blob)` 换音频与波形，**不修改标题、日期等文本**，且用内存 object URL，不发网络请求。
+  文件 input 的 `accept` 使用明确的音频扩展名，不使用 `audio/*`（iOS 文件选择器兼容问题）；change 事件按同一列表校验扩展名（不区分大小写，不依赖 MIME），非列表文件弹窗拒绝、清空 input 并保留当前录音。实际编码仍由现有解码逻辑检查。
   「隐藏」按钮把 `dismissed` 置真，本次会话不再唤出（含 `pointermove`），刷新即恢复（不持久化）。
 - **字体探测** `notifyFontFallback`：仅在缺少苹方(`PingFang SC`)的设备弹出一次自动消失的提示。
 - 生命周期：`pagehide` 时回收 object URL。
