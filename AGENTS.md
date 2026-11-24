@@ -38,7 +38,7 @@ python3 -m http.server 8080 --directory .
 ## app.js 架构要点
 
 - **配置**：顶部 `RECORDING`（`src`/`time`/`title`/`date`/`duration`）与 `GITHUB_URL` 两个常量是仅有的配置入口。
-  `title`/`date` 为纯展示文本；`duration` 为展示的总时长文本，默认留空，从音频元数据自动计算；
+  `title`/`date` 为纯展示文本，`date` 默认留空，页面加载时按设备本地日期显示今天；`duration` 为展示的总时长文本，默认留空，从音频元数据自动计算；
   `time` 是状态栏时钟起点（24 小时制），由 `updateStatusClock` 按 `audio.currentTime` 递增。
 - **波形生成** `generateWaveform`：用 Web Audio `decodeAudioData` 解码，按 `peaksPerSecond`(25) 取振幅包络峰值，
   只在加载音频时生成一次。绘制颜色固定 `waveformColor` (#080808)，**播放/暂停不得改变波形形状或颜色**。
@@ -49,6 +49,7 @@ python3 -m http.server 8080 --directory .
 - **辅助栏** `setupHelperBar`：位于 `.screen` 之外，**只有 `pointermove` 会唤出**，约 1.5 秒后自动隐藏；
   上传只调用 `loadRecording(blob)` 换音频与波形，**不修改标题、日期等文本**，且用内存 object URL，不发网络请求。
   文件 input 的 `accept` 使用明确的音频扩展名，不使用 `audio/*`（iOS 文件选择器兼容问题）；change 事件按同一列表校验扩展名（不区分大小写，不依赖 MIME），非列表文件弹窗拒绝、清空 input 并保留当前录音。实际编码仍由现有解码逻辑检查。
+  「修改日期」控件通过覆盖在按钮上的 `<input type="date">` 允许用户选择并实时修改界面显示的录音日期 `#date`（格式 `YYYY年M月D日`），聚焦选择期间暂停自动隐藏，刷新后恢复 `RECORDING.date` 指定的日期，留空时显示设备本地的今天。
   「隐藏」按钮把 `dismissed` 置真，本次会话不再唤出（含 `pointermove`），刷新即恢复（不持久化）。
 - **字体探测** `notifyFontFallback`：仅在缺少苹方(`PingFang SC`)的设备弹出一次自动消失的提示。
 - 生命周期：`pagehide` 时回收 object URL。
@@ -59,7 +60,7 @@ python3 -m http.server 8080 --directory .
 - 状态栏时间以 `RECORDING.time`（默认 `12:34`）为起点、24 小时制、随播放进度递增；电量固定 `78`，电池数字色 `#c7c7c7`（对照 `assets` 截图取色）。
 - 灵动岛始终显示，红点仅在 `#b92f28`↔`#ff453a` 间做 1.8s 呼吸、尺寸固定 12px、位置不漂移，
   且与音频/波形状态无关；`prefers-reduced-motion` 下保留静态红点。
-- 仅播放/暂停、后退/快进 15 秒、波形拖动、辅助栏两个按钮可交互；更多、完成、转写、替换、设置保持 `disabled`。
+- 仅播放/暂停、后退/快进 15 秒、波形拖动、辅助栏控件（GitHub 仓库、上传音频、修改日期、隐藏）可交互；更多、完成、转写、替换、设置保持 `disabled`。
 - 不采集麦克风、不实际录屏、不覆盖或写回音频文件。
 - 页面聚焦不显示蓝色 outline（`button:focus{outline:none}`）；空格等键盘操作仍应能触发默认按钮行为。
 - 字体依赖系统字体栈，不打包苹方/SF（版权原因）；跨平台差异属预期，靠运行时提示告知用户。
@@ -67,7 +68,7 @@ python3 -m http.server 8080 --directory .
 ## 样式与响应式约定
 
 - 单一 `style.css`，无预处理器。颜色/尺寸多为字面量并对照 `assets` 截图，改动请同步核对截图。
-- 响应式断点：`max-width:374px`（窄屏）与 `max-height:760px`（矮屏），另有 `max-width:430px` 调整辅助栏布局。
+- 响应式断点：`max-width:374px`（窄屏）与 `max-height:760px`（矮屏）。辅助栏在 `max-width:520px` 下使用居中的 2×2 网格，宽度为 `min(320px, calc(100% - 24px))`。
 - 页面外围 `#e7ebef` 与手机顶部 `#d0d0ce` 需保持可辨识边界，勿调成同色。
 
 ## 文档一致性

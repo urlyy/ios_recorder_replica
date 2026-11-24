@@ -5,7 +5,7 @@ const RECORDING = {
   src: 'record/record.m4a',
   time: '12:34',
   title: '电话录音',
-  date: '2026年1月14日',
+  date: '',
   duration: '',
   transcript: '',
 };
@@ -325,13 +325,28 @@ function notifyFontFallback() {
   });
 }
 
-// Floating helper bar: repo link + local upload. It lives outside the iOS
-// replica and auto-hides after a few seconds so screen recordings stay clean.
+function parseDateValue(dateText) {
+  const match = /^\s*(\d{4})年(\d{1,2})月(\d{1,2})日\s*$/.exec(dateText || '');
+  if (!match) return '';
+  return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+}
+
+function formatDateText(isoDate) {
+  const match = /^\s*(\d{4})-(\d{2})-(\d{2})\s*$/.exec(isoDate || '');
+  if (!match) return '';
+  return `${match[1]}年${Number(match[2])}月${Number(match[3])}日`;
+}
+
+// Floating helper bar: repo link, local upload, date picker, and dismiss.
+// It lives outside the iOS replica and auto-hides after a few seconds so
+// screen recordings stay clean.
 function setupHelperBar() {
   const bar = document.querySelector('[data-helper]');
   const repo = document.querySelector('#repo-link');
   const upload = document.querySelector('#upload');
   const file = document.querySelector('#file');
+  const dateDisplay = document.querySelector('#date');
+  const datePicker = document.querySelector('#date-picker');
   const dismiss = document.querySelector('#dismiss');
   repo.href = GITHUB_URL;
   let hideTimer = 0;
@@ -340,6 +355,7 @@ function setupHelperBar() {
   let dismissed = false;
   const scheduleHide = () => {
     clearTimeout(hideTimer);
+    if (document.activeElement === datePicker) return;
     hideTimer = setTimeout(() => bar.classList.remove('is-visible'), 1500);
   };
   const reveal = () => {
@@ -347,11 +363,33 @@ function setupHelperBar() {
     bar.classList.add('is-visible');
     scheduleHide();
   };
+  datePicker.value = parseDateValue(dateDisplay.textContent);
+  const applySelectedDate = () => {
+    const formatted = formatDateText(datePicker.value);
+    if (!formatted) return;
+    dateDisplay.textContent = formatted;
+  };
   reveal();
   // Only movement reveals the bar; clicks/taps/keys must not summon it.
   window.addEventListener('pointermove', reveal, { passive: true });
   bar.addEventListener('pointerenter', () => clearTimeout(hideTimer));
   bar.addEventListener('pointerleave', scheduleHide);
+  datePicker.addEventListener('click', () => {
+    if (typeof datePicker.showPicker === 'function') {
+      try {
+        datePicker.showPicker();
+      } catch {
+        // Ignore when the browser blocks programmatic picker opening.
+      }
+    }
+  });
+  datePicker.addEventListener('focus', () => clearTimeout(hideTimer));
+  datePicker.addEventListener('blur', scheduleHide);
+  datePicker.addEventListener('input', applySelectedDate);
+  datePicker.addEventListener('change', () => {
+    applySelectedDate();
+    reveal();
+  });
   dismiss.addEventListener('click', () => {
     dismissed = true;
     clearTimeout(hideTimer);
@@ -380,7 +418,9 @@ function setupHelperBar() {
 new ResizeObserver(draw).observe(canvas);
 updateStatusClock();
 document.querySelector('#title').textContent = RECORDING.title;
-document.querySelector('#date').textContent = RECORDING.date;
+const today = new Date();
+document.querySelector('#date').textContent = RECORDING.date ||
+  `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
 total.textContent = RECORDING.duration || format(0);
 lucide.createIcons();
 draw();
